@@ -221,6 +221,8 @@ endmodule
 
 /*===================================================================================================================*/
 
+`timescale 1ns/1ns
+
 interface spi_phy_if;
     bit sck;
     bit mosi;
@@ -293,14 +295,20 @@ module spi_16bit_slave
 
     assign spi_host.busy = phy.cs ? '0 : '1;
 
+    always_ff @ (posedge sck_latch_edge, posedge port_cs_fall, posedge spi_host.wr_req_ack) begin
+        if (port_cs_fall || spi_host.wr_req_ack)
+            data_in_buffer <= '0;
+        else if (!cpha_reg)
+            data_in_buffer <= {data_in_buffer[14 : 0], phy.mosi};
+    end
+
     always_ff @ (posedge spi_host.clk_i, posedge spi_host.wr_req_ack) begin
         if (spi_host.wr_req_ack) begin
             spi_host.wr_req <= '0;
         end else begin
-            case (1'b1) 
+            case (1'b1)
                 (port_cs_fall) : begin
                         cpha_reg <= conf_cpha;
-                        data_in_buffer <= '0;
                         phy.miso = 'z;
                 end
                 (port_cs_rise) : begin
@@ -309,10 +317,8 @@ module spi_16bit_slave
                         spi_host.wr_req <= '1;
                 end
                 (sck_latch_edge & ~phy.cs) : begin
-                        if (cpha_reg) cpha_reg <= cpha_reg - 1'b1;
-                        else begin
-                            data_in_buffer <= {data_in_buffer[14 : 0], phy.mosi};
-                        end
+                        if (cpha_reg)
+                            cpha_reg <= cpha_reg - 1'b1;
                         sck_clock_count <= sck_clock_count + 1'b1;
                 end
                 (sck_setup_edge & ~phy.cs) : begin
