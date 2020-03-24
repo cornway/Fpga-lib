@@ -247,10 +247,7 @@ module spi_16bit_slave
 
         input logic conf_cpol,
         input logic conf_dir,
-        input logic conf_cpha,
-
-        input logic[4 : 0] port_prescaler,
-        input logic[3 : 0] port_bit_count
+        input logic conf_cpha
     );
 
     logic[1 : 0]port_cs_shift_reg = '0;
@@ -270,36 +267,20 @@ module spi_16bit_slave
 
     logic sck_latch_edge, sck_setup_edge;
 
-    assign sck_latch_edge = (conf_dir == `POL_RISING) ?  port_sck_rise : port_sck_fall;
-    assign sck_setup_edge = (conf_dir == `POL_RISING) ? port_sck_fall : port_sck_rise;
+    assign sck_latch_edge = port_sck_rise;
+    assign sck_setup_edge = port_sck_fall;
 
     logic[15 : 0] data_in_buffer;
-    logic mux_out;
-    logic[3 : 0] sck_clock_count = '0;
-
-    logic[3 : 0] mux_select;
-    always_ff @ (posedge spi_host.clk_i)
-        if (conf_dir == `LSB_FIRST) begin
-            mux_select = sck_clock_count;
-        end else begin
-            mux_select = port_bit_count - sck_clock_count;
-        end
-    mux_16to1 mux_miso
-        (
-            .in(spi_host.dat_o),
-            .select(mux_select),
-            .out(mux_out)
-        );
-
-    logic cpha_reg = '0;
+    logic[15:0] data_reg;
 
     assign spi_host.busy = phy.cs ? '0 : '1;
 
     always_ff @ (posedge sck_latch_edge, posedge port_cs_fall, posedge spi_host.wr_req_ack) begin
-        if (port_cs_fall || spi_host.wr_req_ack)
+        if (port_cs_fall || spi_host.wr_req_ack) begin
             data_in_buffer <= '0;
-        else if (!cpha_reg)
+        end else begin
             data_in_buffer <= {data_in_buffer[14 : 0], phy.mosi};
+        end
     end
 
     always_ff @ (posedge spi_host.clk_i, posedge spi_host.wr_req_ack) begin
@@ -308,21 +289,16 @@ module spi_16bit_slave
         end else begin
             case (1'b1)
                 (port_cs_fall) : begin
-                        cpha_reg <= conf_cpha;
-                        phy.miso = 'z;
+                    phy.miso = '0;
+                    data_reg <= spi_host.dat_o;
+                    {data_reg[14:0], phy.miso} <= spi_host.dat_o;
                 end
                 (port_cs_rise) : begin
-                        spi_host.dat_i <= data_in_buffer;
-                        sck_clock_count <= '0;
-                        spi_host.wr_req <= '1;
+                    spi_host.dat_i <= data_in_buffer;
+                    spi_host.wr_req <= '1;
                 end
-                (sck_latch_edge & ~phy.cs) : begin
-                        if (cpha_reg)
-                            cpha_reg <= cpha_reg - 1'b1;
-                        sck_clock_count <= sck_clock_count + 1'b1;
-                end
-                (sck_setup_edge & ~phy.cs) : begin
-                        phy.miso <= mux_out;
+                (sck_setup_edge) : begin
+                    {data_reg[14:0], phy.miso} <= data_reg;
                 end
             endcase
         end

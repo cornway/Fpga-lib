@@ -27,12 +27,13 @@ interface sdram_iface_host_t;
     wire clk;
 endinterface
 
-interface sdram_wif_t;
+interface mem_wif_t;
     wire clk_i;
     logic rst_i;
     logic stb_i;
     logic stb_o;
     logic we_i;
+    logic sel_i;
 
     logic[31:0] addr_i;
     logic[15:0] dat_i;
@@ -43,7 +44,7 @@ endinterface
 
 module sdram_wish_if
 (
-    sdram_wif_t wif,
+    mem_wif_t wif,
 
     sdram_phy_if_t phy
 );
@@ -113,7 +114,7 @@ module sdram_wish_if
                         wif.cyc_o <= '1;
                         wif.stb_o <= '1;
                         mem_addr_reg <= wif.addr_i;
-                        if (wif.we_i)
+                        if (!wif.we_i)
                             mem_state_next <= state_write;
                         else
                             mem_state_next <= state_read;
