@@ -26,10 +26,12 @@ typedef struct {
 
 module audio_mixer_8_16bps
 (
-    mem_wif_t mem,
+    mem_wif_t.dev mem,
 
     a_mix_wif_t wif
 );
+
+assign mem.rst_i = wif.rst_i;
 
 a_chan_t a_chan_pool[8];
 a_master_t master;
@@ -52,6 +54,7 @@ enum logic[3:0] {
     state_chan_pld,
     state_mem_read,
     state_mem_read_ack,
+    state_mem_read_ack2,
     state_mem_write,
     state_mem_write_ack,
     state_mix_p1,
@@ -61,6 +64,10 @@ enum logic[3:0] {
 
 always_comb begin
     a_state = a_state_next;
+end
+
+always_ff @(posedge wif.clk_i) begin
+	wif.stb_o <= wif.stb_i;
 end
 
 always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
@@ -79,7 +86,7 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
         a_state_next <= state_idle;
 
     end else if (wif.stb_i) begin
-        if (!wif.we_i) begin /* Write op*/
+        if (!wif.we_i) begin /* Write op */
             if (cmd_channel_x) begin
                 case (cmd_channel_parm)
                     4'h0: begin
@@ -101,7 +108,8 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
                         master.len <= wif.dat_i;
                     end
                     8'h40: begin
-                        a_state_next <= state_prepare;
+                        if (wif.dat_i[0])
+                            a_state_next <= state_prepare;
                     end
                 endcase
             end
@@ -145,17 +153,20 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
 
                 end else if (chan_proc_idx == 4'h8) begin
                     chan_proc_idx <= '0;
+                    not_empty <= '1;
                     if (!not_empty)
                         a_state_next <= state_done;
+                    else
+                        a_state_next <= state_mem_write;
 
                 end else begin
-                    chan_proc_idx++;
+                    chan_proc_idx <= chan_proc_idx + 1'b1;
                     if (a_chan_pool[chan_proc_idx].len) begin
                         mem_addr <= a_chan_pool[chan_proc_idx].addr;
                         volume <= a_chan_pool[chan_proc_idx].volume;
 
-                        a_chan_pool[chan_proc_idx].addr++;
-                        a_chan_pool[chan_proc_idx].len--;
+                        a_chan_pool[chan_proc_idx].addr <= a_chan_pool[chan_proc_idx].addr + 1'b1;
+                        a_chan_pool[chan_proc_idx].len <= a_chan_pool[chan_proc_idx].len - 1'b1;
 
                         not_empty <= not_empty | '1;
                         a_state_next <= state_mem_read;
@@ -164,26 +175,35 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
             end
             state_mem_read: begin
                 if (!mem.cyc_o) begin
-                    mem.stb_i <= '1;
-                    mem.sel_i <= '0;
-                    mem.addr_i <= mem_addr;
-                    a_state_next <= state_mem_read_ack;
+                    if (mem.ack_o) begin
+                        mem.stb_i <= '1;
+                        mem.sel_i <= '1;
+                        mem.addr_i <= mem_addr;
+                        a_state_next <= state_mem_read_ack;
+                    end else begin
+                        mem.sel_i <= '0;
+                    end
                 end
             end
             state_mem_read_ack: begin
-                mem.stb_i <= '0;
+                if (mem.stb_o) begin
+                    mem.stb_i <= '0;
+                    a_state_next <= state_mem_read_ack2;
+                end
+            end
+            state_mem_read_ack2: begin
                 if (!mem.cyc_o) begin
-                    sample <= $signed(mem.dat_o);
-                    mem.sel_i <= '1;
+                    sample <= mem.dat_i << 16;
                     mem.addr_i <= 0;
                     a_state_next <= state_mix_p1;
                 end
             end
             state_mix_p1: begin
-                sample <= (sample * volume) / 8;
+                sample <= sample * volume;
                 a_state_next <= state_mix_p2;
             end
             state_mix_p2: begin
+                sample <= {sample[31], sample[30:0] >> 3};
                 if (chan_proc_idx == 4'h8) begin
                     a_state_next <= state_mem_write;
                 end else begin
@@ -192,14 +212,18 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
             end
             state_mem_write: begin
                 if (!mem.cyc_o) begin
-                    mem.sel_i <= '0;
-                    mem.we_i <= '0;
-                    mem.stb_i <= '1;
-                    mem.addr_i <= master.addr;
-                    mem.dat_o <= sample;
-                    master.addr++;
-                    master.len--;
-                    a_state_next <= state_mem_write_ack;
+                    if (mem.ack_o) begin
+                        mem.sel_i <= '1;
+                        mem.we_i <= '0;
+                        mem.stb_i <= '1;
+                        mem.addr_i <= master.addr;
+                        mem.dat_o <= sample[31:16];
+                        master.addr <= master.addr + 1'b1;
+                        master.len <= master.len - 1'b1;
+                        a_state_next <= state_mem_write_ack;
+                    end else begin
+                        mem.sel_i <= '0;
+                    end
                 end
             end
             state_mem_write_ack: begin
@@ -215,11 +239,11 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
             state_done: begin
                 chan_proc_idx <= '0;
                 wif.cyc_o <= '0;
+                not_empty <= '0;
                 a_state_next <= state_idle;
             end
         endcase
     end
-    wif.stb_o <= wif.stb_i;
 end
 
 endmodule

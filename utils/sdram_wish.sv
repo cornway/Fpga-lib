@@ -3,7 +3,7 @@ interface sdram_phy_if_t;
 	wire[15:0] Dq;
 	logic[11:0] Addr;
 	logic[1:0] Ba;
-	logic Clk;
+	wire Clk;
 	logic Cke;
 	logic Cs_n;
 	logic Ras_n;
@@ -27,8 +27,8 @@ interface sdram_iface_host_t;
     wire clk;
 endinterface
 
-interface mem_wif_t;
-    wire clk_i;
+interface mem_wif_t();
+    logic clk_i;
     logic rst_i;
     logic stb_i;
     logic stb_o;
@@ -40,11 +40,25 @@ interface mem_wif_t;
     logic[15:0] dat_o;
 
     logic cyc_o;
+    logic ack_o;
+
+    modport user
+    (
+        output stb_o, cyc_o, ack_o,
+        input rst_i, stb_i, we_i, sel_i, addr_i,
+        inout clk_i, dat_i, dat_o
+    );
+    modport dev
+    (
+        input stb_o, cyc_o,
+        output rst_i, stb_i, we_i, sel_i, addr_i, ack_o,
+        inout clk_i, dat_i, dat_o
+    );
 endinterface
 
 module sdram_wish_if
 (
-    mem_wif_t wif,
+    mem_wif_t.user wif,
 
     sdram_phy_if_t phy
 );
@@ -103,6 +117,7 @@ module sdram_wish_if
         if (wif.rst_i) begin
             mem_state_next <= state_idle;
             wif.cyc_o <= '0;
+            wif.stb_o <= '0;
             host.rd_enable <= '0;
             host.wr_enable <= '0;
         end else begin

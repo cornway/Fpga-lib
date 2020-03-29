@@ -271,7 +271,7 @@ module spi_16bit_slave
     assign sck_setup_edge = port_sck_fall;
 
     logic[15 : 0] data_in_buffer;
-    logic[15:0] data_reg;
+    logic[14:0] data_reg;
 
     assign spi_host.busy = phy.cs ? '0 : '1;
 
@@ -287,20 +287,14 @@ module spi_16bit_slave
         if (spi_host.wr_req_ack) begin
             spi_host.wr_req <= '0;
         end else begin
-            case (1'b1)
-                (port_cs_fall) : begin
-                    phy.miso = '0;
-                    data_reg <= spi_host.dat_o;
-                    {data_reg[14:0], phy.miso} <= spi_host.dat_o;
-                end
-                (port_cs_rise) : begin
+                if (port_cs_fall) begin
+                    {data_reg, phy.miso} <= spi_host.dat_o;
+                end else if (port_cs_rise) begin
                     spi_host.dat_i <= data_in_buffer;
                     spi_host.wr_req <= '1;
+                end else if (sck_setup_edge) begin
+                    {data_reg[13:0], phy.miso} <= data_reg;
                 end
-                (sck_setup_edge) : begin
-                    {data_reg[14:0], phy.miso} <= data_reg;
-                end
-            endcase
         end
     end
     //always_ff @ (posedge port_sck) 
