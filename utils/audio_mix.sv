@@ -81,7 +81,6 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
         not_empty <= '0;
 
         wif.cyc_o <= '0;
-        wif.stb_o <= '0;
         wif.dat_o <= '0;
         a_state_next <= state_idle;
 
@@ -228,7 +227,7 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
             end
             state_mem_write_ack: begin
                 mem.stb_i <= '0;
-                if (!mem.cyc_o) begin
+                if (mem.stb_o) begin
                     mem.sel_i <= '1;
                     mem.we_i <= '1;
                     mem.addr_i <= '0;

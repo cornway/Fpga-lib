@@ -77,7 +77,7 @@ module sdram_wish_if
 
             .busy(host.busy),
             .rst_n(host.rst_n),
-            .clk(host.clk),
+            .clk(phy.Clk),
 
             /* SDRAM SIDE */
             .addr(phy.Addr),
@@ -107,7 +107,6 @@ module sdram_wish_if
     assign host.wr_addr = mem_addr_reg;
     assign host.rst_n = ~wif.rst_i;
     assign host.clk = wif.clk_i;
-    assign phy.Clk = wif.clk_i;
 
     always_comb begin
         mem_state = mem_state_next;

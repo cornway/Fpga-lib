@@ -69,7 +69,7 @@ module wishbus_4
                         (sel_2) &
                         (sel_3);
 
-    wire mem_op_request = !mem.sel_i && !mem.stb_o && !mem.cyc_o;
+    wire mem_op_request = !mem.sel_i && !mem.stb_i && !mem.stb_o && !mem.cyc_o;
     logic mem_grant_wait = '0;
 
     always_ff @ (posedge mem.clk_i) begin
