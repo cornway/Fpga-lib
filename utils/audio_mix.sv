@@ -45,7 +45,8 @@ wire[3:0] cmd_channel_parm = wif.addr_i[3:0];
 logic[3:0] chan_proc_idx = '0;
 logic[7:0] volume = '0;
 logic[31:0] mem_addr = '0;
-logic signed[31:0] sample = '0;
+logic signed[15:0] sample = '0;
+logic signed[23:0] tmp_sample = '0;
 logic not_empty = '0;
 
 enum logic[3:0] {
@@ -192,17 +193,17 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
             end
             state_mem_read_ack2: begin
                 if (!mem.cyc_o) begin
-                    sample <= mem.dat_i << 16;
+                    tmp_sample <= $signed(mem.dat_i) / 8;
                     mem.addr_i <= 0;
                     a_state_next <= state_mix_p1;
                 end
             end
             state_mix_p1: begin
-                sample <= sample * volume;
+                tmp_sample <= tmp_sample * volume;
                 a_state_next <= state_mix_p2;
             end
             state_mix_p2: begin
-                sample <= {sample[31], sample[30:0] >> 3};
+                sample <= sample + (tmp_sample / 256);
                 if (chan_proc_idx == 4'h8) begin
                     a_state_next <= state_mem_write;
                 end else begin
@@ -216,7 +217,8 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
                         mem.we_i <= '0;
                         mem.stb_i <= '1;
                         mem.addr_i <= master.addr;
-                        mem.dat_o <= sample[31:16];
+                        mem.dat_o <= sample;
+                        sample <= '0;
                         master.addr <= master.addr + 1'b1;
                         master.len <= master.len - 1'b1;
                         a_state_next <= state_mem_write_ack;
