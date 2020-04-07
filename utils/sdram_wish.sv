@@ -132,6 +132,8 @@ module sdram_wish_if
                             mem_state_next <= state_write;
                         else
                             mem_state_next <= state_read;
+                    end else begin
+                        wif.cyc_o <= host.busy;
                     end
                 end
                 state_read: begin

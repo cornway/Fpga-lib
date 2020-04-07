@@ -94,3 +94,113 @@ module wishbus_4
     end
 
 endmodule
+
+
+module wishbus_1to2
+(
+    mem_wif_t.dev mem_1,
+    mem_wif_t.dev mem_2,
+
+    mem_wif_t.user user,
+
+    input logic mem_en
+);
+
+    assign mem_1.rst_i = mem_en ? '0 : user.rst_i;
+    assign mem_1.we_i  = mem_en ? '1 : user.we_i;
+    assign mem_1.stb_i = mem_en ? '0 : user.stb_i;
+    assign mem_1.dat_o = mem_en ? '0 : user.dat_i;
+    assign mem_1.addr_i = mem_en ? '0 : user.addr_i;
+    assign mem_1.sel_i = mem_en ? '1 : user.sel_i;
+
+    assign mem_2.rst_i = mem_en ? user.rst_i : '0;
+    assign mem_2.we_i  = mem_en ? user.we_i : '1;
+    assign mem_2.stb_i = mem_en ? user.stb_i : '0;
+    assign mem_2.dat_o = mem_en ? user.dat_i : '0;
+    assign mem_2.addr_i = mem_en ? user.addr_i : '0;
+    assign mem_2.sel_i = mem_en ? user.sel_i : '1;
+
+    assign user.dat_i = mem_en ? mem_2.dat_i : mem_1.dat_i;
+    assign user.cyc_o = mem_en ? mem_2.cyc_o : mem_1.cyc_o;
+    assign user.stb_o = mem_en ? mem_2.stb_o : mem_1.stb_o;
+    assign user.ack_o = mem_en ? mem_2.ack_o : mem_1.ack_o;
+
+endmodule
+
+interface ram_phy_t ();
+    logic[15:0] data;
+    logic [9:0] rdaddress;
+    wire rdclock;
+    logic[9:0] wraddress;
+    wire wrclock;
+    wire wren;
+    logic[15:0] q;
+endinterface
+
+module ram_2_wishbus
+(
+    ram_phy_t phy,
+
+    mem_wif_t.user mem
+);
+
+enum logic[1:0] {
+    state_idle,
+    state_read,
+    state_write,
+    state_ack
+} ram_state = state_idle;
+
+
+always_ff @ (posedge mem.clk_i) begin
+    if (mem.rst_i) begin
+        ram_state <= state_idle;
+    end else begin
+        case (ram_state)
+            state_idle: begin
+                if (mem.stb_i) begin
+                    mem.stb_o <= '1;
+                    mem.cyc_o <= '1;
+
+                    phy.rdaddress <= mem.addr_i;
+                    phy.wraddress <= mem.addr_i;
+
+                    if (mem.we_i) begin
+                        ram_state <= state_read;
+                    end else begin
+                        phy.data <= mem.dat_o;
+                        phy.wren <= '1;
+                        ram_state <= state_write;
+                    end
+                end
+            end
+            state_read: begin
+                mem.stb_o <= '0;
+                phy.rdclock <= '1;
+                ram_state <= state_ack;
+            end
+            state_write: begin
+                mem.stb_o <= '0;
+                phy.wrclock <= '1;
+                ram_state <= state_ack;
+            end
+            state_ack: begin
+                if (!phy.wren) begin
+                    mem.dat_i <= phy.q;
+                end
+                phy.wrclock <= '0;
+                phy.rdclock <= '0;
+                phy.wren <= '0;
+                phy.data <= '0;
+                phy.wraddress <= '0;
+                phy.rdaddress <= '0;
+
+                mem.cyc_o <= '0;
+
+                ram_state <= state_idle;
+            end
+        endcase
+    end
+end
+
+endmodule
