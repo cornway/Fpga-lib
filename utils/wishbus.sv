@@ -206,3 +206,129 @@ always_ff @ (posedge mem.clk_i) begin
 end
 
 endmodule
+
+module mem_burst_if
+(
+    input logic clk_i,
+    input logic stb_i,
+    input logic seq_i,
+    input logic rst_i,
+    input logic we_i,
+    output logic cyc_o,
+    output logic seq_o,
+    input logic[15:0] len_i,
+    input logic[15:0] dat_i,
+    output logic[15:0] dat_o,
+    input logic[31:0] addr_i,
+
+    mem_wif_t.dev mem
+);
+
+enum logic[2:0] {
+    state_idle,
+    state_init,
+    state_seq,
+    state_req,
+    state_ack,
+    state_ack2,
+    state_ack3,
+    state_done
+} mb_state = state_idle;
+
+logic we_i_reg = '0;
+logic[31:0] addr_reg = '0;
+logic[15:0] data_reg = '0;
+logic[15:0] data_len = '0;
+
+assign mem.rst_i = rst_i;
+
+always_ff @(posedge clk_i, posedge rst_i) begin
+    if (rst_i) begin
+        mb_state <= state_idle;
+        dat_o <= '0;
+        data_reg <= '0;
+        data_len <= '0;
+        we_i_reg <= '0;
+        addr_reg <= '0;
+        seq_o <= '0;
+        cyc_o <= '0;
+
+        mem.stb_i <= '0;
+        mem.we_i <= '1;
+        mem.sel_i <= '1;
+        mem.dat_o <= '0;
+        mem.addr_i <= '0;
+
+    end else begin
+        case (mb_state)
+            state_idle: begin
+                if (stb_i) begin
+                    data_len <= len_i;
+                    addr_reg <= addr_i;
+                    we_i_reg <= we_i;
+                    cyc_o <= '1;
+                    mb_state <= state_seq;
+                end
+            end
+            state_seq: begin
+                if (seq_i) begin
+                    data_reg <= dat_i;
+                    data_len <= data_len - 2'h2;
+                    addr_reg <= addr_reg + 2'h2;
+                    mb_state <= state_req;
+                end
+            end
+            state_req: begin
+                if (!mem.cyc_o) begin
+                    if (mem.ack_o) begin
+                        mem.sel_i <= '1;
+                        mem.stb_i <= '1;
+                        mem.we_i <= we_i_reg;
+                        mem.addr_i <= addr_reg;
+                        if (!we_i_reg) 
+                            mem.dat_o <= data_reg;
+                        mb_state <= state_ack;
+                    end else begin
+                        mem.sel_i <= '0;
+                    end
+                end
+            end
+            state_ack: begin
+                if (mem.stb_o) begin
+                    mem.stb_i <= '0;
+                    mb_state <= state_ack2;
+                end
+            end
+            state_ack2: begin
+                if (!mem.cyc_o) begin
+                    if (we_i_reg)
+                        dat_o <= mem.dat_i;
+                    seq_o <= '1;
+                    mem.dat_o <= '0;
+                    mem.addr_i <= '0;
+                    mem.we_i <= '1;
+                    if (data_len)
+                        mb_state <= state_ack3;
+                    else begin
+                        mb_state <= state_done;
+                    end
+                end
+            end
+            state_ack3: begin
+                if (!seq_i) begin
+                    seq_o <= '0;
+                    mb_state <= state_seq;
+                end
+            end
+            state_done: begin
+                if (!seq_i) begin
+                    cyc_o <= '0;
+                    seq_o <= '0;
+                    mb_state <= state_idle;
+                end
+            end
+        endcase
+    end
+end
+
+endmodule
