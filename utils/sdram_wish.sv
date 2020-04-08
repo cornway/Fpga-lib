@@ -127,7 +127,7 @@ module sdram_wish_if
                     if (wif.stb_i && !host.busy) begin
                         wif.cyc_o <= '1;
                         wif.stb_o <= '1;
-                        mem_addr_reg <= wif.addr_i;
+                        mem_addr_reg <= {1'b0, wif.addr_i[31:1]};
                         if (!wif.we_i)
                             mem_state_next <= state_write;
                         else

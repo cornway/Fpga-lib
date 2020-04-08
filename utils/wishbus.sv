@@ -162,8 +162,8 @@ always_ff @ (posedge mem.clk_i) begin
                     mem.stb_o <= '1;
                     mem.cyc_o <= '1;
 
-                    phy.rdaddress <= mem.addr_i;
-                    phy.wraddress <= mem.addr_i;
+                    phy.rdaddress <= {1'b0, mem.addr_i[31:1]};
+                    phy.wraddress <= {1'b0, mem.addr_i[31:1]};
 
                     if (mem.we_i) begin
                         ram_state <= state_read;

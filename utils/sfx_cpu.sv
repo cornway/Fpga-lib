@@ -98,7 +98,7 @@ always_ff @(posedge mem.clk_i) begin
         case (exec_state)
             state_exec_addr_lo: begin
                 tmp_addr[15:0] <= mem_data_i;
-                mem_addr <= mem_addr + 1'b1;
+                mem_addr <= mem_addr + 2'h2;
                 mem_rd_req <= '1;
                 exec_state <= state_exec_addr_hi;
             end
@@ -152,15 +152,15 @@ always_ff @(posedge mem.clk_i) begin
             end
         end else case (opcode)
             OP_NOP: begin
-                pc_addr <= pc_addr + 1'b1;
-                mem_addr <= pc_addr + 1'b1;
+                pc_addr <= pc_addr + 2'h2;
+                mem_addr <= pc_addr + 2'h2;
                 mem_rd_req <= '1;
             end
             OP_LDMI: begin
                 rg_num_dst_reg <= rg_num_dst;
                 rg_num_src_reg <= rg_num_src;
-                pc_addr <= pc_addr + 2'h3;
-                mem_addr <= pc_addr + 1'b1;
+                pc_addr <= pc_addr + 3'h6;
+                mem_addr <= pc_addr + 2'h2;
                 mem_rd_req <= '1;
                 exec_state <= state_exec_addr_lo;
                 exec_state_next <= state_exec_ldmir;
@@ -168,8 +168,8 @@ always_ff @(posedge mem.clk_i) begin
             OP_STMI: begin
                 rg_num_dst_reg <= rg_num_dst;
                 rg_num_src_reg <= rg_num_src;
-                pc_addr <= pc_addr + 2'h3;
-                mem_addr <= pc_addr + 1'b1;
+                pc_addr <= pc_addr + 3'h6;
+                mem_addr <= pc_addr + 2'h2;
                 mem_rd_req <= '1;
                 exec_state <= state_exec_addr_lo;
                 exec_state_next <= state_exec_stmir;
@@ -177,8 +177,8 @@ always_ff @(posedge mem.clk_i) begin
             OP_MOV: begin
                 rg_num_dst_reg <= rg_num_dst;
                 rg_num_src_reg <= rg_num_src;
-                pc_addr <= pc_addr + 2'h2;
-                mem_addr <= pc_addr + 1'b1;
+                pc_addr <= pc_addr + 3'h4;
+                mem_addr <= pc_addr + 2'h2;
                 mem_rd_req <= '1;
                 exec_state <= state_exec_fetch_2_reg;
             end
@@ -195,8 +195,8 @@ always_ff @(posedge mem.clk_i) begin
             OP_ADDS: begin
                 alu_req_state <= state_alu_adds;
                 alu_req <= '1;
-                pc_addr <= pc_addr + 1'b1;
-                mem_addr <= pc_addr + 1'b1;
+                pc_addr <= pc_addr + 2'h2;
+                mem_addr <= pc_addr + 2'h2;
                 mem_rd_req <= '1;
             end
             OP_ADDI: begin
@@ -204,15 +204,15 @@ always_ff @(posedge mem.clk_i) begin
                 alu_imm_short_reg <= alu_imm_short;
                 alu_req_state <= state_alu_addi;
                 alu_req <= '1;
-                pc_addr <= pc_addr + 1'b1;
-                mem_addr <= pc_addr + 1'b1;
+                pc_addr <= pc_addr + 2'h2;
+                mem_addr <= pc_addr + 2'h2;
                 mem_rd_req <= '1;
             end
             OP_MUL: begin
                 alu_req_state <= state_alu_mul;
                 alu_req <= '1;
-                pc_addr <= pc_addr + 1'b1;
-                mem_addr <= pc_addr + 1'b1;
+                pc_addr <= pc_addr + 2'h2;
+                mem_addr <= pc_addr + 2'h2;
                 mem_rd_req <= '1;
             end
             default: begin

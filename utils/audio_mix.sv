@@ -165,8 +165,8 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
                         mem_addr <= a_chan_pool[chan_proc_idx].addr;
                         volume <= a_chan_pool[chan_proc_idx].volume;
 
-                        a_chan_pool[chan_proc_idx].addr <= a_chan_pool[chan_proc_idx].addr + 1'b1;
-                        a_chan_pool[chan_proc_idx].len <= a_chan_pool[chan_proc_idx].len - 1'b1;
+                        a_chan_pool[chan_proc_idx].addr <= a_chan_pool[chan_proc_idx].addr + 2'h2;
+                        a_chan_pool[chan_proc_idx].len <= a_chan_pool[chan_proc_idx].len - 2'h2;
 
                         not_empty <= not_empty | '1;
                         a_state_next <= state_mem_read;
@@ -219,8 +219,8 @@ always_ff @(posedge wif.clk_i, posedge wif.rst_i) begin
                         mem.addr_i <= master.addr;
                         mem.dat_o <= sample;
                         sample <= '0;
-                        master.addr <= master.addr + 1'b1;
-                        master.len <= master.len - 1'b1;
+                        master.addr <= master.addr + 2'h2;
+                        master.len <= master.len - 2'h2;
                         a_state_next <= state_mem_write_ack;
                     end else begin
                         mem.sel_i <= '0;
