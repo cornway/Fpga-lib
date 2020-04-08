@@ -7,6 +7,8 @@ module fxcpu16
     input logic rst_i
 );
 
+assign mem.rst_i = '0;
+
 localparam
     OP_NOP = 8'h0, // nop; {16'h0}; <nop> ...
     OP_LDMI = 8'h80, // load memory to reg; {dummy[15:11], dest[10:8], opcode[7:0]}; <ldmi> <addr lo> <addr hi>

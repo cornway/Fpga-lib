@@ -44,15 +44,15 @@ interface mem_wif_t();
 
     modport user
     (
-        output stb_o, cyc_o, ack_o,
-        input rst_i, stb_i, we_i, sel_i, addr_i,
-        inout clk_i, dat_i, dat_o
+        output stb_o, cyc_o, ack_o, dat_i,
+        input dat_o, rst_i, stb_i, we_i, sel_i, addr_i,
+        inout clk_i
     );
     modport dev
     (
-        input stb_o, cyc_o,
-        output rst_i, stb_i, we_i, sel_i, addr_i, ack_o,
-        inout clk_i, dat_i, dat_o
+        input stb_o, cyc_o, dat_i,
+        output dat_o, rst_i, stb_i, we_i, sel_i, addr_i, ack_o,
+        inout clk_i
     );
 endinterface
 
@@ -143,7 +143,7 @@ module sdram_wish_if
                 end
                 state_write: begin
                     wif.stb_o <= '0;
-                    host.wr_data <= wif.dat_i;
+                    host.wr_data <= wif.dat_o;
                     host.wr_enable <= '1;
                     mem_state_next <= state_wait_wr_ack;
                 end
@@ -151,7 +151,7 @@ module sdram_wish_if
                     host.rd_enable <= '0;
                     if (host.rd_ready) begin
                         mem_addr_reg <= '0;
-                        wif.dat_o <= host.rd_data;
+                        wif.dat_i <= host.rd_data;
                         mem_state_next <= state_done;
                     end
                 end

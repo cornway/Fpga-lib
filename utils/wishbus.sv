@@ -12,22 +12,22 @@ module wishbus_4
 );
 
     assign user_0.clk_i = mem.clk_i;
-    assign user_0.dat_i = mem.dat_o;
+    assign user_0.dat_i = mem.dat_i;
     assign user_0.cyc_o = mem.cyc_o;
     assign user_0.stb_o = mem.stb_o;
 
     assign user_1.clk_i = mem.clk_i;
-    assign user_1.dat_i = mem.dat_o;
+    assign user_1.dat_i = mem.dat_i;
     assign user_1.cyc_o = mem.cyc_o;
     assign user_1.stb_o = mem.stb_o;
 
     assign user_2.clk_i = mem.clk_i;
-    assign user_2.dat_i = mem.dat_o;
+    assign user_2.dat_i = mem.dat_i;
     assign user_2.cyc_o = mem.cyc_o;
     assign user_2.stb_o = mem.stb_o;
 
     assign user_3.clk_i = mem.clk_i;
-    assign user_3.dat_i = mem.dat_o;
+    assign user_3.dat_i = mem.dat_i;
     assign user_3.cyc_o = mem.cyc_o;
     assign user_3.stb_o = mem.stb_o;
 
@@ -43,7 +43,7 @@ module wishbus_4
                         (user_en[2] ? user_2.addr_i : '0) |
                         (user_en[3] ? user_3.addr_i : '0);
 
-    assign mem.dat_i =  (user_en[0] ? user_0.dat_o : '0) |
+    assign mem.dat_o =  (user_en[0] ? user_0.dat_o : '0) |
                         (user_en[1] ? user_1.dat_o : '0) |
                         (user_en[2] ? user_2.dat_o : '0) |
                         (user_en[3] ? user_3.dat_o : '0);
@@ -109,31 +109,33 @@ module wishbus_1to2
     assign mem_1.rst_i = mem_en ? '0 : user.rst_i;
     assign mem_1.we_i  = mem_en ? '1 : user.we_i;
     assign mem_1.stb_i = mem_en ? '0 : user.stb_i;
-    assign mem_1.dat_o = mem_en ? '0 : user.dat_i;
+    assign mem_1.dat_o = mem_en ? '0 : user.dat_o;
     assign mem_1.addr_i = mem_en ? '0 : user.addr_i;
     assign mem_1.sel_i = mem_en ? '1 : user.sel_i;
+    //assign mem_1.clk_i = user.clk_i;
 
     assign mem_2.rst_i = mem_en ? user.rst_i : '0;
     assign mem_2.we_i  = mem_en ? user.we_i : '1;
     assign mem_2.stb_i = mem_en ? user.stb_i : '0;
-    assign mem_2.dat_o = mem_en ? user.dat_i : '0;
+    assign mem_2.dat_o = mem_en ? user.dat_o : '0;
     assign mem_2.addr_i = mem_en ? user.addr_i : '0;
     assign mem_2.sel_i = mem_en ? user.sel_i : '1;
+    //assign mem_2.clk_i = user.clk_i;
 
     assign user.dat_i = mem_en ? mem_2.dat_i : mem_1.dat_i;
     assign user.cyc_o = mem_en ? mem_2.cyc_o : mem_1.cyc_o;
     assign user.stb_o = mem_en ? mem_2.stb_o : mem_1.stb_o;
-    assign user.ack_o = mem_en ? mem_2.ack_o : mem_1.ack_o;
+    //assign user.ack_o = mem_en ? mem_2.ack_o : mem_1.ack_o;
 
 endmodule
 
 interface ram_phy_t ();
     logic[15:0] data;
     logic [9:0] rdaddress;
-    wire rdclock;
+    logic rdclock;
     logic[9:0] wraddress;
-    wire wrclock;
-    wire wren;
+    logic wrclock;
+    logic wren;
     logic[15:0] q;
 endinterface
 
