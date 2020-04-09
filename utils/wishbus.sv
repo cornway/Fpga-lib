@@ -106,7 +106,7 @@ module wishbus_1to2
     input logic mem_en
 );
 
-    assign mem_1.rst_i = mem_en ? '0 : user.rst_i;
+    assign mem_1.rst_i = user.rst_i;
     assign mem_1.we_i  = mem_en ? '1 : user.we_i;
     assign mem_1.stb_i = mem_en ? '0 : user.stb_i;
     assign mem_1.dat_o = mem_en ? '0 : user.dat_o;
@@ -114,7 +114,7 @@ module wishbus_1to2
     assign mem_1.sel_i = mem_en ? '1 : user.sel_i;
     //assign mem_1.clk_i = user.clk_i;
 
-    assign mem_2.rst_i = mem_en ? user.rst_i : '0;
+    assign mem_2.rst_i = user.rst_i;
     assign mem_2.we_i  = mem_en ? user.we_i : '1;
     assign mem_2.stb_i = mem_en ? user.stb_i : '0;
     assign mem_2.dat_o = mem_en ? user.dat_o : '0;
@@ -153,10 +153,13 @@ enum logic[1:0] {
     state_ack
 } ram_state = state_idle;
 
+assign mem.ack_o = '1;
 
 always_ff @ (posedge mem.clk_i) begin
     if (mem.rst_i) begin
         ram_state <= state_idle;
+        mem.stb_o <= '0;
+        mem.cyc_o <= '0;
     end else begin
         case (ram_state)
             state_idle: begin
@@ -177,14 +180,18 @@ always_ff @ (posedge mem.clk_i) begin
                 end
             end
             state_read: begin
-                mem.stb_o <= '0;
-                phy.rdclock <= '1;
-                ram_state <= state_ack;
+                if (!mem.stb_i) begin
+                    mem.stb_o <= '0;
+                    phy.rdclock <= '1;
+                    ram_state <= state_ack;
+                end
             end
             state_write: begin
-                mem.stb_o <= '0;
-                phy.wrclock <= '1;
-                ram_state <= state_ack;
+                if (!mem.stb_i) begin
+                    mem.stb_o <= '0;
+                    phy.wrclock <= '1;
+                    ram_state <= state_ack;
+                end
             end
             state_ack: begin
                 if (!phy.wren) begin

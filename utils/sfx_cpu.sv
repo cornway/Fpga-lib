@@ -4,10 +4,16 @@ module fxcpu16
 (
     mem_wif_t.dev mem,
 
-    input logic rst_i
+    input logic rst_i,
+
+    output logic[1:0] addr_space,
+
+    output wire[31:0] dbg_reg,
+
+    input logic dbg_step
 );
 
-assign mem.rst_i = '0;
+assign mem.rst_i = rst_i;
 
 localparam
     OP_NOP = 8'h0, // nop; {16'h0}; <nop> ...
@@ -17,7 +23,9 @@ localparam
     OP_ADDS = 8'h40, // add two registers, write back; {dummy[15:14], src[13:11], dest[10:8], opcode[7:0]}; <adds>
     OP_MUL = 8'h41, // mul two registers, write back; {dummy[15:14], src[13:11], dest[10:8], opcode[7:0]}; <mul>
     OP_ADDI = 8'h42, // add reg with signed immediate; {imm[15:11], dest[10:8], opcode[7:0]}; <addi>
+    OP_ADDI32 = 8'h43,
     OP_JNZ = 8'h20, // jump near zero, signed; {offset[15:8], opcode[7:0]}; <jnz> 
+    OP_JI = 8'h21,
     OP_HALT = 8'hff; // halt everything until reset {dummy[15:8], opcode[7:0]}; <halt>
 
 logic halt = '0;
@@ -28,20 +36,16 @@ logic[31:0] pc_addr = '0;
 logic[15:0] rg[8];
 wire[15:0] mstr;
 
-logic[31:0] dbg_reg;
-
-assign dbg_reg = {rg[1], rg[0]};
-
 logic alu_carry = '0;
 logic alu_zero = '0;
 logic alu_ovf = '0;
 assign mstr[0] = {alu_carry, alu_zero, alu_ovf};
 
 wire[4:0] alu_imm_short = pc[15:11];
-logic[4:0] alu_imm_short_reg = '0; 
+logic signed[4:0] alu_imm_short_reg = '0; 
 
 wire[7:0] opcode = pc[7:0];
-wire[7:0] jnz_addr = pc[15:8];
+wire signed[7:0] jnz_addr = pc[15:8];
 
 wire reset = rst_i;
 wire[2:0] rg_num_dst = pc[10:8];
@@ -62,12 +66,18 @@ logic[31:0] tmp_addr = '0;
 logic alu_req = '0;
 logic alu_req_ack = '0;
 logic[48:0] alu_acc = '0;
+wire signed[31:0] alu_acc32u = alu_acc[31:0];
+wire signed[31:0] alu_acc32s = alu_acc[31:0];
+
+assign addr_space = mem_addr[31:30];
 
 enum logic[3:0] {
     state_alu_idle,
     state_alu_mul,
     state_alu_adds,
     state_alu_addi,
+    state_alu_addi32,
+    state_alu_addi32_2,
     state_alu_done
 } alu_state = state_alu_idle, alu_req_state = state_alu_idle;
 
@@ -80,16 +90,18 @@ enum logic[3:0] {
     state_exec_stmir,
     state_exec_stmir_ack,
     state_exec_movi,
+    state_exec_ji,
     state_exec_fetch_2_reg
 } exec_state = state_exec_idle, exec_state_next = state_exec_idle;
 
-always_ff @(posedge mem.clk_i) begin
+always_ff @(posedge mem.clk_i, posedge reset) begin
     if (reset) begin
-        pc_addr <= '0;
+        pc_addr <= 32'h40000000;
+        pc <= '0;
         halt <= '0;
-        mem_rd_req <= '0;
+        mem_rd_req <= '1;
         mem_wr_req <= '0;
-        mem_addr <= '0;
+        mem_addr <= 32'h40000000;
     end else if (mem_rd_req || mem_wr_req) begin
         if (mem_ack) begin
             mem_rd_req <= '0;
@@ -126,6 +138,12 @@ always_ff @(posedge mem.clk_i) begin
                 mem_rd_req <= '1;
                 exec_state <= state_exec_idle;
             end
+            state_exec_ji: begin
+                mem_addr <= tmp_addr;
+                pc_addr <= tmp_addr;
+                mem_rd_req <= '1;
+                exec_state <= state_exec_idle;
+            end
             state_exec_fetch_2_reg: begin
                 rg[rg_num_dst_reg] <= mem_data_i;
                 mem_addr <= pc_addr;
@@ -145,8 +163,11 @@ always_ff @(posedge mem.clk_i) begin
                     state_alu_addi: begin
                         rg[rg_num_dst_reg] <= alu_acc[15:0];
                     end
+                    state_alu_addi32: begin
+                        {rg[rg_num_dst_reg + 1'b1], rg[rg_num_dst_reg]} <= alu_acc32u;
+                    end
                     state_alu_mul: begin
-                        {rg[rg_num_dst], rg[rg_num_dst + 1'b1]} <= alu_acc;
+                        {rg[rg_num_dst + 1'b1], rg[rg_num_dst]} <= alu_acc32u;
                     end
                 endcase
                 alu_req_state <= state_alu_idle;
@@ -185,14 +206,15 @@ always_ff @(posedge mem.clk_i) begin
                 exec_state <= state_exec_fetch_2_reg;
             end
             OP_JNZ: begin
-                if (jnz_addr[7]) begin
-                    pc_addr <= pc_addr + jnz_addr - 9'h100;
-                    mem_addr <= pc_addr + jnz_addr - 9'h100;
-                end else begin
-                    pc_addr <= pc_addr + jnz_addr;
-                    mem_addr <= pc_addr + jnz_addr;
-                end
+                pc_addr <= $unsigned($signed(pc_addr) + jnz_addr);
+                mem_addr <= $unsigned($signed(pc_addr) + jnz_addr);
                 mem_rd_req <= '1;
+            end
+            OP_JI: begin
+                mem_addr <= pc_addr + 2'h2;
+                mem_rd_req <= '1;
+                exec_state <= state_exec_addr_lo;
+                exec_state_next <= state_exec_ji;
             end
             OP_ADDS: begin
                 alu_req_state <= state_alu_adds;
@@ -205,6 +227,15 @@ always_ff @(posedge mem.clk_i) begin
                 rg_num_dst_reg <= rg_num_dst;
                 alu_imm_short_reg <= alu_imm_short;
                 alu_req_state <= state_alu_addi;
+                alu_req <= '1;
+                pc_addr <= pc_addr + 2'h2;
+                mem_addr <= pc_addr + 2'h2;
+                mem_rd_req <= '1;
+            end
+            OP_ADDI32: begin
+                rg_num_dst_reg <= rg_num_dst;
+                alu_imm_short_reg <= alu_imm_short;
+                alu_req_state <= state_alu_addi32;
                 alu_req <= '1;
                 pc_addr <= pc_addr + 2'h2;
                 mem_addr <= pc_addr + 2'h2;
@@ -224,7 +255,7 @@ always_ff @(posedge mem.clk_i) begin
     end
 end
 
-always_ff @(posedge mem.clk_i) begin
+always_ff @(posedge mem.clk_i, posedge reset) begin
     if (reset) begin
         alu_state <= state_alu_idle;
         alu_req_ack <= '1;
@@ -240,11 +271,15 @@ always_ff @(posedge mem.clk_i) begin
                 alu_state <= state_alu_done;
             end
             state_alu_addi : begin
-                if (alu_imm_short_reg[4]) begin
-                    alu_acc <= rg[rg_num_dst_reg] + alu_imm_short_reg - 6'h3f;
-                end else begin
-                    alu_acc <= rg[rg_num_dst_reg] + alu_imm_short_reg;
-                end
+                alu_acc <= $unsigned($signed(rg[rg_num_dst_reg]) + alu_imm_short_reg);
+                alu_state <= state_alu_done;
+            end
+            state_alu_addi32 : begin
+                alu_acc <= {rg[rg_num_dst_reg + 1'b1], rg[rg_num_dst_reg]};
+                alu_state <= state_alu_addi32_2;
+            end
+            state_alu_addi32_2 : begin
+                alu_acc <= $unsigned(alu_acc32s + alu_imm_short_reg);
                 alu_state <= state_alu_done;
             end
             state_alu_mul: begin
@@ -277,7 +312,7 @@ enum logic[2:0] {
     state_mem_done
 } mem_state = state_mem_idle;
 
-always_ff @(posedge mem.clk_i) begin
+always_ff @(posedge mem.clk_i, posedge reset) begin
     if (reset) begin
         mem_state <= state_mem_idle;
         mem.dat_o <= '0;
@@ -353,4 +388,5 @@ always_ff @(posedge mem.clk_i) begin
     end
 end
 
+assign dbg_reg = halt ? {8'hff, opcode} : rg[1];
 endmodule
