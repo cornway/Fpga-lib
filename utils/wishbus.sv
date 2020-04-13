@@ -106,7 +106,7 @@ module wishbus_1to2
     input logic mem_en
 );
 
-    assign mem_1.rst_i = user.rst_i;
+    //assign mem_1.rst_i = user.rst_i;
     assign mem_1.we_i  = mem_en ? '1 : user.we_i;
     assign mem_1.stb_i = mem_en ? '0 : user.stb_i;
     assign mem_1.dat_o = mem_en ? '0 : user.dat_o;
@@ -114,7 +114,7 @@ module wishbus_1to2
     assign mem_1.sel_i = mem_en ? '1 : user.sel_i;
     //assign mem_1.clk_i = user.clk_i;
 
-    assign mem_2.rst_i = user.rst_i;
+    //assign mem_2.rst_i = user.rst_i;
     assign mem_2.we_i  = mem_en ? user.we_i : '1;
     assign mem_2.stb_i = mem_en ? user.stb_i : '0;
     assign mem_2.dat_o = mem_en ? user.dat_o : '0;

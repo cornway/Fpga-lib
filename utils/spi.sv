@@ -284,7 +284,7 @@ module spi_16bit_slave
     end
 
     always_ff @ (posedge spi_host.clk_i, posedge spi_host.wr_req_ack) begin
-        if (spi_host.wr_req_ack) begin
+        if (spi_host.wr_req_ack || spi_host.reset) begin
             spi_host.wr_req <= '0;
         end else begin
                 if (port_cs_fall) begin
@@ -297,5 +297,102 @@ module spi_16bit_slave
                 end
         end
     end
-    //always_ff @ (posedge port_sck) 
+endmodule
+
+module spi_host_2_wif
+(
+    spi_host_if spi,
+    mem_wif_t.dev mem,
+
+    input logic[7:0] spi_rd_cmd
+);
+
+enum logic[2:0] {
+    state_idle,
+    state_write,
+    state_write_ack,
+    state_read,
+    state_read_ack,
+    state_read_ack2
+} spi_state = state_idle;
+
+logic[15:0] spi_io_addr = '0;
+logic spi_rd_req = '0;
+
+always_ff @ (posedge mem.clk_i, posedge mem.rst_i) begin
+    if (mem.rst_i) begin
+        mem.addr_i <= '0;
+        mem.dat_o <= '0;
+        mem.stb_i <= '0;
+        mem.sel_i <= '1;
+        mem.we_i <= '1;
+        spi_state <= state_idle;
+    end else begin
+        case (spi_state)
+            state_idle: begin
+                if (spi.wr_req) begin
+                    if (spi.dat_i[15:8] == spi_rd_cmd) begin
+                        spi_io_addr <= spi.dat_i;
+                        spi_rd_req <= '1;
+                    end else begin
+                        spi_state <= state_write;
+                    end
+                end else if (spi_rd_req) begin
+                    spi_rd_req <= '0;
+                    spi_state <= state_read;
+                end
+            end
+            state_write: begin
+                if (!mem.cyc_o) begin
+                    if (mem.ack_o) begin
+                        mem.sel_i <= '1;
+                        mem.we_i <= '0;
+                        mem.stb_i <= '1;
+                        mem.addr_i <= '0;
+                        mem.dat_o <= spi.dat_i;
+                        spi_state <= state_write_ack;
+                    end else begin
+                        mem.sel_i <= '0;
+                    end
+                end
+            end
+            state_write_ack: begin
+                if (mem.stb_o) begin
+                    mem.we_i <= '1;
+                    mem.addr_i <= '0;
+                    mem.dat_o <= '0;
+                    mem.stb_i <= '0;
+                    spi_state <= state_idle;
+                end
+            end
+            state_read: begin
+                if (!mem.cyc_o) begin
+                    if (mem.ack_o) begin
+                        mem.sel_i <= '1;
+                        mem.addr_i <= spi_io_addr;
+                        mem.stb_i <= '1;
+                        spi_state <= state_read;
+                    end else begin
+                        mem.sel_i <= '0;
+                    end
+                end
+            end
+            state_read_ack: begin
+                if (mem.stb_o) begin
+                    mem.stb_i <= '0;
+                    spi_state <= state_read_ack2;
+                end
+            end
+            state_read_ack2: begin
+                if (!mem.cyc_o) begin
+                    spi.dat_o <= mem.dat_i;
+                    mem.addr_i <= '0;
+                    spi_state <= state_idle;
+                end
+            end
+        endcase
+        spi.wr_req_ack <= spi.wr_req;
+    end
+end
+
 endmodule
