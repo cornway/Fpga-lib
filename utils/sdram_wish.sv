@@ -45,14 +45,14 @@ interface mem_wif_t();
     modport user
     (
         output stb_o, cyc_o, dat_i,
-        input dat_o, rst_i, stb_i, we_i, sel_i, addr_i,
-        inout clk_i, ack_o
+        input dat_o, stb_i, we_i, sel_i, addr_i,
+        inout clk_i, rst_i, ack_o
     );
     modport dev
     (
         input stb_o, cyc_o, dat_i,
-        output dat_o, rst_i, stb_i, we_i, sel_i, addr_i,
-        inout clk_i, ack_o
+        output dat_o, stb_i, we_i, sel_i, addr_i,
+        inout clk_i, rst_i, ack_o
     );
 endinterface
 

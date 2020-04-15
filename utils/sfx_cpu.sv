@@ -40,11 +40,14 @@ wire[7:0] opcode = pc[7:0];
 wire signed[7:0] jnz_addr = pc[15:8];
 
 wire reset = rst_i;
-wire[2:0] rg_alu_dst_idx = pc[10:8];
-wire[2:0] rg_alu_src_idx = pc[13:11];
+/*dst = src + src2*/
+wire[1:0] rg_alu_dst_idx = pc[9:8];
+wire[2:0] rg_alu_src_idx = pc[12:10];
+wire[2:0] rg_alu_src2_idx = pc[15:13];
 
-logic[2:0] rg_alu_dst_idx_reg = '0;
+logic[1:0] rg_alu_dst_idx_reg = '0;
 logic[2:0] rg_alu_src_idx_reg = '0;
+logic[2:0] rg_alu_src2_idx_reg = '0;
 
 wire[3:0] rg_mem_dst_idx = pc[11:8];
 wire[3:0] rg_mem_src_idx = pc[15:12];
@@ -77,6 +80,8 @@ enum logic[3:0] {
     state_alu_addi,
     state_alu_addi32,
     state_alu_divu,
+    state_alu_and,
+    state_alu_xor,
     state_alu_done
 } alu_state = state_alu_idle, alu_req_state = state_alu_idle;
 
@@ -88,7 +93,7 @@ enum logic[3:0] {
     state_exec_store_reg_hi,
     state_exec_movi,
     state_exec_ji,
-    state_exec_fetch_reg_low,
+    state_exec_fetch_reg_lo,
     state_exec_fetch_reg_hi
 } exec_state = state_exec_idle;
 
@@ -140,7 +145,7 @@ always_ff @(posedge mem.clk_i, posedge reset) begin
                 mem_rd_req <= '1;
                 exec_state <= state_exec_idle;
             end
-            state_exec_fetch_reg_low: begin
+            state_exec_fetch_reg_lo: begin
                 rg[rg_mem_dst_idx_reg][15:0] <= mem_data_i;
                 if (rg_mem_dst_idx_reg == RG_PC) begin
                     /*Case 'MOVW PC 0xxxx..'*/
@@ -155,7 +160,7 @@ always_ff @(posedge mem.clk_i, posedge reset) begin
                 rg[rg_mem_dst_idx_reg][31:16] <= mem_data_i;
                 mem_addr <= mem_addr - 2'h2;
                 mem_rd_req <= '1;
-                exec_state <= state_exec_fetch_reg_low;
+                exec_state <= state_exec_fetch_reg_lo;
             end
             default: begin
             end
@@ -163,66 +168,101 @@ always_ff @(posedge mem.clk_i, posedge reset) begin
     end else begin
         if (alu_req) begin
             if (alu_req_ack) begin
-                case(alu_req_state)
-                    state_alu_adds: begin
-                        rg[rg_alu_dst_idx_reg] <= alu_acc[15:0];
-                    end
-                    state_alu_addi: begin
-                        rg[rg_alu_dst_idx_reg] <= alu_acc[15:0];
-                    end
-                    state_alu_addi32: begin
-                        rg[rg_alu_dst_idx_reg] <= alu_acc32u;
-                    end
-                    state_alu_mul: begin
-                        {rg[rg_alu_dst_idx + 1'b1], rg[rg_alu_dst_idx]} <= alu_acc;
-                    end
-                    state_alu_divu: begin
-                        rg[rg_alu_dst_idx] <= alu_acc[31:0];
-                    end
-                endcase
+                if (alu_req_state >= state_alu_adds && alu_req_state <= state_alu_addi) begin
+                    rg[rg_alu_dst_idx_reg] <= alu_acc[15:0];
+                end else begin
+                    rg[rg_alu_dst_idx_reg] <= alu_acc32u;
+                end
                 alu_req_state <= state_alu_idle;
                 alu_req <= '0;
             end
+        end else if (opcode & ALU_OP_BM) begin
+            case (opcode)
+                OP_ADDS: begin
+                    alu_req_state <= state_alu_adds;
+                end
+                OP_ADDI: begin
+                    alu_imm_short_reg <= alu_imm_short;
+                    alu_req_state <= state_alu_addi;
+                end
+                OP_ADDI32: begin
+                    alu_imm_short_reg <= alu_imm_short;
+                    alu_req_state <= state_alu_addi32;
+                end
+                OP_MUL: begin
+                    alu_req_state <= state_alu_mul;
+                end
+                OP_DIVU: begin
+                    alu_req_state <= state_alu_divu;
+                end
+                OP_AND: begin
+                    alu_req_state <= state_alu_and;
+                end
+                OP_XOR: begin
+                    alu_req_state <= state_alu_xor;
+                end
+            endcase
+            rg_alu_dst_idx_reg <= rg_alu_src_idx;
+            rg_alu_src_idx_reg <= rg_alu_src2_idx;
+            rg_alu_src2_idx_reg <= rg_alu_dst_idx;
+            rg[RG_PC] <= rg[RG_PC] + 2'h2;
+            mem_addr <= rg[RG_PC] + 2'h2;
+            alu_req <= '1;
+            mem_rd_req <= '1;
+        end else if (opcode & WRAP_OP_BM) begin
+            case (opcode)
+                OP_STMDB: begin
+                    pc <= {rg_mem_src_idx, rg_mem_dst_idx, OP_STMI};
+                    /* Decrement before */
+                    rg[RG_SP] <= rg[RG_SP] - 3'h4;
+                end
+                OP_LDMIA: begin
+                    pc <= {rg_mem_src_idx, rg_mem_dst_idx, OP_LDMI};
+                    exec_mem_inc_after <= 3'h4;
+                end
+                OP_PUSH: begin
+                    pc <= {rg_mem_src_idx, RG_SP, OP_STMI};
+                    /* Decrement before */
+                    rg[RG_SP] <= rg[RG_SP] - 3'h4;
+                end
+                OP_POP: begin
+                    pc <= {rg_mem_src_idx, RG_SP, OP_LDMI};
+                    exec_mem_inc_after <= 3'h4;
+                end
+            endcase
+        end else if (opcode & MEM_OP_BM) begin
+            case (opcode)
+                OP_LDMI: begin
+                    mem_addr <= rg[rg_mem_dst_idx] + 2'h2;
+                    mem_rd_req <= '1;
+                    exec_state <= state_exec_fetch_reg_hi;
+                end
+                OP_STMI: begin
+                    mem_wr_req <= '1;
+                    mem_addr <= rg[rg_mem_dst_idx] + 2'h2;
+                    mem_data_o <= rg[rg_mem_src_idx][31:16];
+                    exec_state <= state_exec_store_reg_hi;
+                end
+                OP_STM16: begin
+                    mem_wr_req <= '1;
+                    mem_addr <= rg[rg_mem_dst_idx];
+                    mem_data_o <= rg[rg_mem_src_idx][15:0];
+                    exec_state <= state_exec_store_reg_lo;
+                end
+                OP_LDM16: begin
+                    mem_addr <= rg[rg_mem_dst_idx];
+                    mem_rd_req <= '1;
+                    exec_state <= state_exec_fetch_reg_lo;
+                end
+            endcase
+            rg[RG_PC] <= rg[RG_PC] + 2'h2;
+            rg_mem_dst_idx_reg <= rg_mem_dst_idx;
+            rg_mem_src_idx_reg <= rg_mem_src_idx;
         end else case (opcode)
             OP_NOP: begin
                 rg[RG_PC] <= rg[RG_PC] + 2'h2;
                 mem_addr <= rg[RG_PC] + 2'h2;
                 mem_rd_req <= '1;
-            end
-            OP_LDMI: begin
-                rg_mem_dst_idx_reg <= rg_mem_dst_idx;
-                rg_mem_src_idx_reg <= rg_mem_src_idx;
-                rg[RG_PC] <= rg[RG_PC] + 2'h2;
-                mem_addr <= rg[rg_mem_dst_idx];
-                mem_rd_req <= '1;
-                exec_state <= state_exec_fetch_reg_hi;
-            end
-            OP_STMI: begin
-                rg_mem_dst_idx_reg <= rg_mem_dst_idx;
-                rg_mem_src_idx_reg <= rg_mem_src_idx;
-                rg[RG_PC] <= rg[RG_PC] + 2'h2;
-                mem_wr_req <= '1;
-                mem_addr <= rg[rg_mem_dst_idx];
-                mem_data_o <= rg[rg_mem_src_idx][31:16];
-                exec_state <= state_exec_store_reg_hi;
-            end
-            OP_STMDB: begin
-                pc <= {rg_mem_src_idx, rg_mem_dst_idx, OP_STMI};
-                /* Decrement before */
-                rg[RG_SP] <= rg[RG_SP] - 3'h4;
-            end
-            OP_LDMIA: begin
-                pc <= {rg_mem_src_idx, rg_mem_dst_idx, OP_LDMI};
-                exec_mem_inc_after <= 3'h4;
-            end
-            OP_PUSH: begin
-                pc <= {RG_PC, RG_SP, OP_STMI};
-                /* Decrement before */
-                rg[RG_SP] <= rg[RG_SP] - 3'h4;
-            end
-            OP_POP: begin
-                pc <= {RG_PC, RG_SP, OP_LDMI};
-                exec_mem_inc_after <= 3'h4;
             end
             OP_MOV: begin
                 rg_mem_dst_idx_reg <= rg_mem_dst_idx;
@@ -230,7 +270,7 @@ always_ff @(posedge mem.clk_i, posedge reset) begin
                 rg[RG_PC] <= rg[RG_PC] + 3'h4;
                 mem_addr <= rg[RG_PC] + 2'h2;
                 mem_rd_req <= '1;
-                exec_state <= state_exec_fetch_reg_low;
+                exec_state <= state_exec_fetch_reg_lo;
             end
             OP_MOVW: begin
                 rg_mem_dst_idx_reg <= rg_mem_dst_idx;
@@ -249,44 +289,12 @@ always_ff @(posedge mem.clk_i, posedge reset) begin
                 /*TODO: Wrap that on the high layers*/
                 pc <= {4'h0, RG_PC, OP_MOVW};
             end
-            OP_ADDS: begin
-                alu_req_state <= state_alu_adds;
-                alu_req <= '1;
-                rg[RG_PC] <= rg[RG_PC] + 2'h2;
-                mem_addr <= rg[RG_PC] + 2'h2;
-                mem_rd_req <= '1;
-            end
-            OP_ADDI: begin
-                rg_alu_dst_idx_reg <= rg_alu_dst_idx;
-                alu_imm_short_reg <= alu_imm_short;
-                alu_req_state <= state_alu_addi;
-                alu_req <= '1;
-                rg[RG_PC] <= rg[RG_PC] + 2'h2;
-                mem_addr <= rg[RG_PC] + 2'h2;
-                mem_rd_req <= '1;
-            end
-            OP_ADDI32: begin
-                rg_alu_dst_idx_reg <= rg_alu_dst_idx;
-                alu_imm_short_reg <= alu_imm_short;
-                alu_req_state <= state_alu_addi32;
-                alu_req <= '1;
-                rg[RG_PC] <= rg[RG_PC] + 2'h2;
-                mem_addr <= rg[RG_PC] + 2'h2;
-                mem_rd_req <= '1;
-            end
-            OP_MUL: begin
-                alu_req_state <= state_alu_mul;
-                alu_req <= '1;
-                rg[RG_PC] <= rg[RG_PC] + 2'h2;
-                mem_addr <= rg[RG_PC] + 2'h2;
-                mem_rd_req <= '1;
-            end
-            OP_DIVU: begin
-                alu_req_state <= state_alu_divu;
-                alu_req <= '1;
-                rg[RG_PC] <= rg[RG_PC] + 2'h2;
-                mem_addr <= rg[RG_PC] + 2'h2;
-                mem_rd_req <= '1;
+            OP_JEQ: begin
+                if (alu_zero) begin
+                    pc <= {4'h0, RG_PC, OP_MOVW};
+                end else begin
+                    pc <= {8'h0, OP_NOP};
+                end
             end
             default: begin
                 halt <= '1;
@@ -308,23 +316,31 @@ always_ff @(posedge mem.clk_i, posedge reset) begin
                 end
             end
             state_alu_adds: begin
-                alu_acc <= rg[rg_alu_dst_idx_reg] + rg[rg_alu_src_idx_reg];
+                alu_acc <= rg[rg_alu_src_idx_reg] + rg[rg_alu_src2_idx_reg];
                 alu_state <= state_alu_done;
             end
             state_alu_addi : begin
-                alu_acc <= $unsigned($signed(rg[rg_alu_dst_idx_reg][15:0]) + alu_imm_short_reg);
+                alu_acc <= $unsigned($signed(rg[rg_alu_src_idx_reg][15:0]) + alu_imm_short_reg);
                 alu_state <= state_alu_done;
             end
             state_alu_addi32 : begin
-                alu_acc <= $unsigned($signed(rg[rg_alu_dst_idx_reg]) + alu_imm_short_reg);
+                alu_acc <= $unsigned($signed(rg[rg_alu_src_idx_reg]) + alu_imm_short_reg);
                 alu_state <= state_alu_done;
             end
             state_alu_mul: begin
-                alu_acc <= rg[rg_alu_dst_idx_reg] * rg[rg_alu_src_idx_reg];
+                alu_acc <= rg[rg_alu_src_idx_reg][15:0] * rg[rg_alu_src2_idx_reg][15:0];
                 alu_state <= state_alu_done;
             end
             state_alu_divu: begin
-                alu_acc <= rg[rg_alu_dst_idx_reg][15:0] / rg[rg_alu_src_idx_reg][15:0];
+                alu_acc <= rg[rg_alu_src_idx_reg][15:0] / rg[rg_alu_src2_idx_reg][15:0];
+                alu_state <= state_alu_done;
+            end
+            state_alu_and: begin
+                alu_acc <= rg[rg_alu_src_idx_reg] & rg[rg_alu_src2_idx_reg];
+                alu_state <= state_alu_done;
+            end
+            state_alu_xor: begin
+                alu_acc <= rg[rg_alu_src_idx_reg] ^ rg[rg_alu_src2_idx_reg];
                 alu_state <= state_alu_done;
             end
             state_alu_done: begin
@@ -430,5 +446,4 @@ always_ff @(posedge mem.clk_i, posedge reset) begin
     end
 end
 
-assign dbg_reg = rg[0];
 endmodule
