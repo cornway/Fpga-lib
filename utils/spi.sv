@@ -283,7 +283,7 @@ module spi_16bit_slave
         end
     end
 
-    always_ff @ (posedge spi_host.clk_i, posedge spi_host.wr_req_ack) begin
+    always_ff @ (posedge spi_host.clk_i) begin
         if (spi_host.wr_req_ack || spi_host.reset) begin
             spi_host.wr_req <= '0;
         end else begin
@@ -304,7 +304,7 @@ module spi_host_2_wif
     spi_host_if spi,
     mem_wif_t.dev mem,
 
-    input logic[7:0] spi_rd_cmd
+    input logic[15:0] spi_rd_cmd
 );
 
 enum logic[2:0] {
@@ -313,13 +313,13 @@ enum logic[2:0] {
     state_write_ack,
     state_read,
     state_read_ack,
-    state_read_ack2
+	 state_read_ack2
 } spi_state = state_idle;
 
 logic[15:0] spi_io_addr = '0;
 logic spi_rd_req = '0;
 
-always_ff @ (posedge mem.clk_i, posedge mem.rst_i) begin
+always_ff @ (posedge mem.clk_i) begin
     if (mem.rst_i) begin
         mem.addr_i <= '0;
         mem.dat_o <= '0;
@@ -331,7 +331,7 @@ always_ff @ (posedge mem.clk_i, posedge mem.rst_i) begin
         case (spi_state)
             state_idle: begin
                 if (spi.wr_req) begin
-                    if (spi.dat_i[15:8] == spi_rd_cmd) begin
+                    if (spi.dat_i == spi_rd_cmd) begin
                         spi_io_addr <= spi.dat_i;
                         spi_rd_req <= '1;
                     end else begin
@@ -359,9 +359,9 @@ always_ff @ (posedge mem.clk_i, posedge mem.rst_i) begin
             state_write_ack: begin
                 if (mem.stb_o) begin
                     mem.we_i <= '1;
+                    mem.stb_i <= '0;
                     mem.addr_i <= '0;
                     mem.dat_o <= '0;
-                    mem.stb_i <= '0;
                     spi_state <= state_idle;
                 end
             end
